@@ -1,2 +1,4 @@
-manga_filter
+manga\_filter
 ============
+
+某有名アプリっぽい画像を生成する何か
