@@ -1,12 +1,16 @@
 # -*- coding:utf-8 -*-
+import os
 import Image
 import ImageFilter
 
 class MangaFilter:
     """漫画カメラっぽい画像に変換する機能を提供"""
+
+    OUTPUT_TYPE = "png"  # 面倒なのでPNG一択で
+
     def __init__(self, name):
         self.img = Image.open(name)
-        # 予定ではヒストグラム解析して閾値を決める
+        self.converted = None
         self.black = 75
         self.white = 115
         self.gray  = 0xaa
@@ -39,11 +43,11 @@ class MangaFilter:
         """斜め線の画像(5*5px)を作成"""
         img = Image.new(mode="L", size=(5, 5), color=0xff)
         pixel = img.load()
-        mask = [[0x00, 0xff, 0xff, 0xff, 0xff],
-                [0xff, 0xff, 0xff, 0xff, 0x00],
-                [0xff, 0xff, 0xff, 0x00, 0xff],
-                [0xff, 0xff, 0x00, 0xff, 0xff],
-                [0xff, 0x00, 0xff, 0xff, 0xff]]
+        mask = [[  0, 255, 255, 255, 255],
+                [255, 255, 255, 255,   0],
+                [255, 255, 255,   0, 255],
+                [255, 255,   0, 255, 255],
+                [255,   0, 255, 255, 255]]
         for x in range(5):
             for y in range(5):
                 pixel[x, y] = mask[x][y]
@@ -67,22 +71,30 @@ class MangaFilter:
         """変換処理"""
         # 3値変換
         img = self.img.convert("L").point(self.to3colors)
-
         # 塗りつぶし線のmask処理
         sen = self.stretch_mask_image()
         sen_mask = img.point(self.make_mask)
         img = Image.composite(img, sen, sen_mask)
-
         # 輪郭線のmask処理
         rin = Image.new(mode="L", size=img.size, color=0)
         rin_mask = self.img.filter(ImageFilter.CONTOUR).convert("L").point(self.to2colors)
         img = Image.composite(img, rin, rin_mask)
-        return img
+        self.converted = img
+
+    def save(self, output_path):
+        root, ext = os.path.splitext(output_path)
+        path = root + "." + self.OUTPUT_TYPE
+        self.converted.save(path, self.OUTPUT_TYPE)
+
+
+def convert_image(input_path, output_path):
+    """入力パス名の画像を変換して出力"""
+    mf = MangaFilter(input_path)
+    mf.convert()
+    mf.save(output_path)
+    mf.converted.show()
+
 
 if __name__ == "__main__":
-    img = MangaFilter("baby.jpg").convert()
-    # 出力
-    out_name = "conv.png"
-    img.save(out_name, "png")
-    img.show()
+    convert_image("test.jpg", "test_conved.png")
 
