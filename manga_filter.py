@@ -1,4 +1,4 @@
-# -*- coding:utf-8 -*-
+# -*- coding: utf-8 -*-
 import os
 from PIL import Image
 from PIL import ImageFilter
@@ -12,13 +12,64 @@ class MangaFilter:
 
     def __init__(self, name):
         self.img = Image.open(name)
+        self.gray_img = self.img.convert("L")
         self.converted = None
         self.naname_img = None
-        self.black_gray = 75
-        self.white_gray = 115
+        self.black_gray = 75   # 適当な初期値
+        self.white_gray = 115  # 同じく
         self.rinkaku_noise  = 176
-        # マスク画像を生成
         self._create_naname_image()
+        self._analyze_histogram()
+
+    def _analyze_histogram(self):
+        """ヒストグラムから、3色の境目を補正する"""
+        # 関数長い分割せねばﾒﾝﾄﾞｸｾ
+        hist = self.gray_img.histogram()
+        max_pixel = self.gray_img.size[0] * self.gray_img.size[1]
+        # 明るさ強度を4分割し、黒、2灰、白としてカウント
+        black_count = 0
+        gray_count = 0
+        white_count = 0
+        for brightness, pixel in enumerate(hist):
+            if brightness < 64:
+                black_count += pixel
+            elif brightness < 192:
+                gray_count += pixel
+            else:
+                white_count += pixel
+        # 白黒の平均と灰を比較して灰部分の幅を決める
+        avg = (black_count + white_count) / 2
+        if gray_count > avg * 2:
+            gray_range = 20
+        elif gray_count < avg / 10:  # 極端に白か黒が多いパターン
+            gray_range = 60
+        elif gray_count < avg / 6:
+            gray_range = 40
+        elif gray_count < avg / 2:
+            gray_range = 30
+        else:
+            gray_range = 25
+
+        # 全体の1/5のピクセル数が出てくる所を基準点として
+        # 灰領域を、上で求めた幅分白黒側にとる
+        black_gray = 0
+        white_gray = 0
+        count = 0
+        for brightness, pixel in enumerate(hist):
+            count += pixel
+            if count >= max_pixel  / 5:
+                black_gray = brightness - gray_range
+                white_gray = brightness + gray_range
+                break
+        offset = abs(black_gray - white_gray)
+        if black_gray < gray_range:
+            black_gray += offset
+            white_gray += offset
+        if white_gray > 255 - gray_range:
+            black_gray -= offset
+            white_gray -= offset
+        self.black_gray = black_gray
+        self.white_gray = white_gray
 
     def _create_small_image(self, image):
         """大きい画像なら画像を小さくして返す"""
@@ -97,18 +148,17 @@ class MangaFilter:
 
     def convert(self):
         """変換処理"""
-        img = self.img.convert("L")
         # 画像サイズを小さくする
-        img = self._create_small_image(img)
+        small_img = self._create_small_image(self.gray_img)
         # 元画像を3値変換
-        img = img.point(self._create_3colors_image)
+        img = small_img.point(self._create_3colors_image)
         # 斜め線のmask処理 グレー部分を透明にしてマスク画像と重ねる
         self._stretch_naname_image(img.size)
         naname_mask = img.point(self._create_naname_mask)
         img = Image.composite(img, self.naname_img, naname_mask)
         # 輪郭線のmask処理 PILの輪郭フィルタ->グレースケール->適当な値で2値化して真っ黒画像と重ねる
         rinkaku = Image.new(mode="L", size=img.size, color=0)
-        rinkaku_mask = img.filter(ImageFilter.CONTOUR).convert("L").point(self._create_rinkaku_mask)
+        rinkaku_mask = small_img.filter(ImageFilter.CONTOUR).convert("L").point(self._create_rinkaku_mask)
         img = Image.composite(img, rinkaku, rinkaku_mask)
         self.converted = img
 
@@ -124,9 +174,9 @@ def convert_image(input_path, output_path):
     mf = MangaFilter(input_path)
     mf.convert()
     mf.save(output_path)
-    #mf.converted.show()
 
 
 if __name__ == "__main__":
-    convert_image("pic2.jpg", "test_conved.png")
+    #convert_image("t.png", "test_conved.png")
+    convert_image("kai.jpg", "test_conved.png")
 
