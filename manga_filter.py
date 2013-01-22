@@ -1,13 +1,14 @@
 # -*- coding:utf-8 -*-
 import os
-import Image
-import ImageFilter
+from PIL import Image
+from PIL import ImageFilter
 
 class MangaFilter:
     """漫画カメラっぽい画像に変換する機能を提供"""
 
     OUTPUT_TYPE = "png"  # 面倒なのでPNG一択で
     GRAY_COLOR = 128     # 灰色の定義(0 < x < 255ならなんでもいい)
+    MAX_SIZE = 640       # 縦横ともに最大640px
 
     def __init__(self, name):
         self.img = Image.open(name)
@@ -18,7 +19,23 @@ class MangaFilter:
         self.rinkaku_noise  = 176
         # マスク画像を生成
         self._create_naname_image()
-        self._stretch_naname_image()
+
+    def _create_small_image(self, image):
+        """大きい画像なら画像を小さくして返す"""
+        size = image.size
+        if size[0] > size[1]:
+            large_index = 0
+        else:
+            large_index = 1
+        if size[large_index] <= self.MAX_SIZE:
+            return image
+        if large_index == 0:
+            x = self.MAX_SIZE
+            y = int(1.0 * x * size[1] / size[0])
+        else:
+            y = self.MAX_SIZE
+            x = int(1.0 * y * size[0] / size[1])
+        return image.resize((x, y), Image.ANTIALIAS)
 
     def _create_3colors_image(self, brightness):
         """
@@ -66,9 +83,8 @@ class MangaFilter:
                 pixel[x, y] = mask[x][y]
         self.naname_img = img
 
-    def _stretch_naname_image(self):
+    def _stretch_naname_image(self, size):
         """マスク用の画像を入力画像のサイズまで拡大する"""
-        size = self.img.size
         img = Image.new(mode="L", size=size, color=0)
         x = 0
         while x < size[0]:
@@ -81,15 +97,18 @@ class MangaFilter:
 
     def convert(self):
         """変換処理"""
-        # 元画像を3値変換
         img = self.img.convert("L")
+        # 画像サイズを小さくする
+        img = self._create_small_image(img)
+        # 元画像を3値変換
         img = img.point(self._create_3colors_image)
         # 斜め線のmask処理 グレー部分を透明にしてマスク画像と重ねる
+        self._stretch_naname_image(img.size)
         naname_mask = img.point(self._create_naname_mask)
         img = Image.composite(img, self.naname_img, naname_mask)
         # 輪郭線のmask処理 PILの輪郭フィルタ->グレースケール->適当な値で2値化して真っ黒画像と重ねる
         rinkaku = Image.new(mode="L", size=img.size, color=0)
-        rinkaku_mask = self.img.filter(ImageFilter.CONTOUR).convert("L").point(self._create_rinkaku_mask)
+        rinkaku_mask = img.filter(ImageFilter.CONTOUR).convert("L").point(self._create_rinkaku_mask)
         img = Image.composite(img, rinkaku, rinkaku_mask)
         self.converted = img
 
@@ -109,5 +128,5 @@ def convert_image(input_path, output_path):
 
 
 if __name__ == "__main__":
-    convert_image("test.jpg", "test_conved.png")
+    convert_image("pic2.jpg", "test_conved.png")
 
